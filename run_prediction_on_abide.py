@@ -46,6 +46,9 @@ def _get_paths(phenotypic, atlas, timeseries_dir):
     IDs_subject = []
     diagnosis = []
     subject_ids = phenotypic['SUB_ID']
+    mean_fd = phenotypic['func_mean_fd']
+    num_fd = phenotypic['func_num_fd']
+    perc_fd = phenotypic['func_perc_fd']
     for index, subject_id in enumerate(subject_ids):
         this_pheno = phenotypic[phenotypic['SUB_ID'] == subject_id]
         this_timeseries = join(timeseries_dir, atlas,
@@ -54,7 +57,7 @@ def _get_paths(phenotypic, atlas, timeseries_dir):
             timeseries.append(np.loadtxt(this_timeseries))
             IDs_subject.append(subject_id)
             diagnosis.append(this_pheno['DX_GROUP'].values[0])
-    return timeseries, diagnosis, IDs_subject
+    return timeseries, diagnosis, IDs_subject, mean_fd, num_fd, perc_fd
 
 
 # Path to data directory where timeseries are downloaded. If not
@@ -91,6 +94,8 @@ else:
 atlases = ['AAL', 'HarvardOxford', 'BASC/networks', 'BASC/regions',
            'Power', 'MODL/64', 'MODL/128']
 
+atlases = ['BASC/networks']
+
 dimensions = {'AAL': 116,
               'HarvardOxford': 118,
               'BASC/networks': 122,
@@ -101,7 +106,7 @@ dimensions = {'AAL': 116,
 
 # prepare dictionary for saving results
 columns = ['atlas', 'measure', 'classifier', 'scores', 'iter_shuffle_split',
-           'dataset', 'covariance_estimator', 'dimensionality']
+           'dataset', 'covariance_estimator', 'dimensionality', 'cor_fd_mean', 'cor_fd_num', 'cor_fd_perc']
 results = dict()
 for column_name in columns:
     results.setdefault(column_name, [])
@@ -113,17 +118,23 @@ phenotypic = pd.read_csv(pheno_dir)
 from connectome_matrices import ConnectivityMeasure
 from sklearn.covariance import LedoitWolf
 measures = ['correlation', 'partial correlation', 'tangent']
+# tspisak
+#measures = ['correlation', 'partial correlation']
 
 from my_estimators import sklearn_classifiers
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import cross_val_score
 
+#cv = StratifiedShuffleSplit(n_splits=100, test_size=0.25,
+#                            random_state=0)
+
+# tspisak
 cv = StratifiedShuffleSplit(n_splits=100, test_size=0.25,
                             random_state=0)
 
 for atlas in atlases:
     print("Running predictions: with atlas: {0}".format(atlas))
-    timeseries, diagnosis, _ = _get_paths(phenotypic, atlas, timeseries_dir)
+    timeseries, diagnosis, IDs_subject, mean_fd, num_fd, perc_fd = _get_paths(phenotypic, atlas, timeseries_dir)
 
     _, classes = np.unique(diagnosis, return_inverse=True)
     iter_for_prediction = cv.split(timeseries, classes)
@@ -143,14 +154,33 @@ for atlas in atlases:
                 score = cross_val_score(estimator, conn_coefs,
                                         classes, scoring='roc_auc',
                                         cv=[(train_index, test_index)])
+
+                est_fit_train = estimator.fit(conn_coefs[train_index], classes[train_index])
+                prediction_test = est_fit_train.predict_proba(conn_coefs[test_index])
+
+                tmp=pd.DataFrame({'pred': prediction_test[:,1],
+                                          'fd': mean_fd[test_index]})
+                results['cor_fd_mean'].append(tmp.corr().values[0,1])
+
+                tmp = pd.DataFrame({'pred': prediction_test[:, 1],
+                                    'fd': num_fd[test_index]})
+                results['cor_fd_num'].append(tmp.corr().values[0, 1])
+
+                tmp = pd.DataFrame({'pred': prediction_test[:, 1],
+                                    'fd': perc_fd[test_index]})
+                results['cor_fd_perc'].append(tmp.corr().values[0, 1])
+
                 results['atlas'].append(atlas)
                 results['iter_shuffle_split'].append(index)
                 results['measure'].append(measure)
                 results['classifier'].append(est_key)
                 results['dataset'].append('ABIDE')
                 results['dimensionality'].append(dimensions[atlas])
-                results['scores'].append(score)
+                results['scores'].append(float(score))
                 results['covariance_estimator'].append('LedoitWolf')
+        all_results = pd.DataFrame(results)
+        print(all_results[['classifier', 'measure', 'scores']].groupby(['measure', 'classifier']).mean())
+        print(all_results[['classifier', 'measure', 'cor_fd_mean']].groupby(['classifier', 'measure']).mean())
     res = pd.DataFrame(results)
     # save classification scores per atlas
     this_atlas_dir = join(predictions_dir, atlas)
@@ -159,3 +189,6 @@ for atlas in atlases:
     res.to_csv(join(this_atlas_dir, 'scores.csv'))
 all_results = pd.DataFrame(results)
 all_results.to_csv('predictions_on_abide.csv')
+
+# tspisak
+print( all_results[['classifier', 'measure', 'scores']].groupby(['measure', 'classifier']).mean() )
