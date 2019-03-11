@@ -45,8 +45,10 @@ import pandas as pd
 
 from downloader import fetch_abide
 
+#tspisak
 from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
+from nilearn.signal import clean
 
 
 def _get_paths(phenotypic, atlas, timeseries_dir):
@@ -56,6 +58,7 @@ def _get_paths(phenotypic, atlas, timeseries_dir):
     IDs_subject = []
     diagnosis = []
     subject_ids = phenotypic['SUB_ID']
+    # tspisak
     mean_fd = []
     num_fd = []
     perc_fd = []
@@ -67,6 +70,7 @@ def _get_paths(phenotypic, atlas, timeseries_dir):
             timeseries.append(np.loadtxt(this_timeseries))
             IDs_subject.append(subject_id)
             diagnosis.append(this_pheno['DX_GROUP'].values[0])
+            # tspisak
             mean_fd.append(this_pheno['func_mean_fd'].values[0])
             num_fd.append(this_pheno['func_num_fd'].values[0])
             perc_fd.append(this_pheno['func_perc_fd'].values[0])
@@ -104,9 +108,9 @@ else:
     if not os.path.exists(predictions_dir):
         os.makedirs(predictions_dir)
 
-atlases = ['AAL', 'HarvardOxford', 'BASC/networks', 'BASC/regions',
-           'Power', 'MODL/64', 'MODL/128']
-
+#atlases = ['AAL', 'HarvardOxford', 'BASC/networks', 'BASC/regions',
+#           'Power', 'MODL/64', 'MODL/128']
+#tspisak
 atlases = ['BASC/networks']
 
 dimensions = {'AAL': 116,
@@ -118,6 +122,7 @@ dimensions = {'AAL': 116,
               'MODL/128': 128}
 
 # prepare dictionary for saving results
+#tspisak
 columns = ['atlas', 'measure', 'classifier', 'scores', 'iter_shuffle_split',
            'dataset', 'covariance_estimator', 'dimensionality', 'cor_fd_mean', 'cor_fd_num', 'cor_fd_perc',
            'disccor_fd_mean', 'disccor_fd_num', 'disccor_fd_perc', 'diff_fd_mean', 'diff_fd_num', 'diff_fd_perc'
@@ -133,8 +138,6 @@ phenotypic = pd.read_csv(pheno_dir)
 from connectome_matrices import ConnectivityMeasure
 from sklearn.covariance import LedoitWolf
 measures = ['correlation', 'partial correlation', 'tangent']
-# tspisak
-#measures = ['correlation', 'partial correlation']
 
 from my_estimators import sklearn_classifiers
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -149,16 +152,15 @@ cv = StratifiedShuffleSplit(n_splits=100, test_size=0.25,
 
 for atlas in atlases:
     print("Running predictions: with atlas: {0}".format(atlas))
+    # tspisak
     timeseries, diagnosis, IDs_subject, mean_fd, num_fd, perc_fd = _get_paths(phenotypic, atlas, timeseries_dir)
 
     _, classes = np.unique(diagnosis, return_inverse=True)
     iter_for_prediction = cv.split(timeseries, classes)
 
+    ##################
+    # tspisak
     print(len(diagnosis))
-    print(len(classes))
-    print(len(mean_fd))
-
-
     print("Correlation of Class and meanFD, numFD, percFD:")
     tmp = pd.DataFrame({'class': classes,
                         'fd': mean_fd})
@@ -195,19 +197,34 @@ for atlas in atlases:
                 kind=measure)
             conn_coefs = connections.fit_transform(timeseries)  #ToDo: pipeline here!!
 
+            # here, regress out mean FD on the subject level:
+            # note that this should be done separately for the train and test samples
+
+            #print(conn_coefs[train_index].shape)
+            #print(len(mean_fd[train_index]))
+            # tspisak
+            cleaned_conn_coefs_train = clean(conn_coefs[train_index], detrend=False, standardize=False,
+                                             confounds=[mean_fd[train_index] - mean_fd[train_index].mean(),
+                                                        np.square(mean_fd[train_index] - mean_fd[train_index].mean())])
+            # tspisak
+            cleaned_conn_coefs_test = clean(conn_coefs[test_index], detrend=False, standardize=False,
+                                            confounds=[mean_fd[test_index] - mean_fd[test_index].mean(),
+                                                       np.square(mean_fd[test_index] - mean_fd[test_index].mean())])
+
             for est_key in sklearn_classifiers.keys():
                 print('Supervised learning: classification {0}'.format(est_key))
                 estimator = sklearn_classifiers[est_key]
-                score = cross_val_score(estimator, conn_coefs,
-                                        classes, scoring='roc_auc',
-                                        cv=[(train_index, test_index)])
+                #score = cross_val_score(estimator, conn_coefs,
+                #                        classes, scoring='roc_auc',
+                #                        cv=[(train_index, test_index)])
 
                 ##################
+                # tspisak
+                est_fit_train = estimator.fit(cleaned_conn_coefs_train, classes[train_index])
+                prediction_test = est_fit_train.predict_proba(cleaned_conn_coefs_test)
 
-                est_fit_train = estimator.fit(conn_coefs[train_index], classes[train_index])
-                prediction_test = est_fit_train.predict_proba(conn_coefs[test_index])
-
-                my_score = roc_auc_score(classes[test_index], prediction_test)
+                # equivalent to that commented out above
+                score = roc_auc_score(classes[test_index], prediction_test[:,1])
 
                 tmp=pd.DataFrame({'pred': prediction_test[:,0],
                                           'fd': mean_fd[test_index]})
@@ -222,8 +239,8 @@ for atlas in atlases:
                 results['cor_fd_perc'].append(tmp.corr().values[0, 1])
 
                 #################
-
-                prediction_test = est_fit_train.predict(conn_coefs[test_index])
+                # tspisak
+                prediction_test = est_fit_train.predict(cleaned_conn_coefs_test)
 
                 tmp = pd.DataFrame({'pred': prediction_test,
                                     'fd': mean_fd[test_index]})
@@ -238,6 +255,7 @@ for atlas in atlases:
                 results['disccor_fd_perc'].append(tmp.corr().values[0, 1])
 
                 ###################
+                # tspisak
                 prediction_test = np.array(prediction_test)
 
                 mean_fd_test = np.array(mean_fd[test_index])
@@ -251,7 +269,7 @@ for atlas in atlases:
                 perc_fd_test = np.array(perc_fd[test_index])
                 results['diff_fd_perc'].append(
                     np.mean(perc_fd_test[prediction_test == 1]) - np.mean(perc_fd_test[prediction_test == 0]))
-
+                ###################
                 results['atlas'].append(atlas)
                 results['iter_shuffle_split'].append(index)
                 results['measure'].append(measure)
@@ -261,14 +279,16 @@ for atlas in atlases:
                 results['scores'].append(float(score))
                 results['covariance_estimator'].append('LedoitWolf')
         all_results = pd.DataFrame(results)
+        # tspisak (print in all iteration to monitor progress)
         print(all_results[['classifier', 'measure', 'scores']].groupby(['measure', 'classifier']).mean())
         print(all_results[['classifier', 'measure', 'cor_fd_mean']].groupby(['classifier', 'measure']).mean())
     res = pd.DataFrame(results)
     # save classification scores per atlas
+    # tspisak
     this_atlas_dir = join(predictions_dir, atlas)
     if not os.path.exists(this_atlas_dir):
         os.makedirs(this_atlas_dir)
-    res.to_csv(join(this_atlas_dir, 'scores.csv'))
+    res.to_csv(join(this_atlas_dir, 'scores_nopipe_fd2reg.csv'))
 all_results = pd.DataFrame(results)
 all_results.to_csv('predictions_on_abide.csv')
 

@@ -30,7 +30,8 @@ def _pandas_data_frame(path):
         Pandas data frame per path.
     """
     data = pd.read_csv(path)
-    scores = data['scores'].str.strip('[ ]')
+    #scores = data['scores'].str.strip('[ ]')
+    scores = data['scores']
     del data['scores']
     data = data.join(scores)
     data.scores = data.scores.astype(float)
@@ -194,10 +195,9 @@ def _get_data():
     """
     """
     data = []
-    dataset_names = ['COBRE', 'ADNI', 'ADNIDOD', 'ACPI', 'ABIDE',
-                     'HCP']
+    dataset_names = ['ABIDE']
     for dataset in dataset_names:
-        each_atlas_path = join('predictions', dataset, 'scores.csv')
+        each_atlas_path = join(dataset, 'predictions', 'BASC', 'networks', 'scores.csv')
         this_data = _pandas_data_frame(each_atlas_path)
         data.append(this_data)
     data = pd.concat(data)
@@ -210,19 +210,29 @@ data = data.drop('Unnamed: 0', axis=1)
 
 
 def demean(group):
-    return group - group.mean()
+    return group# - group.mean()
 
 # Take the average over iter_shuffle_split
 df = data.groupby(['classifier', 'measure', 'atlas', 'dataset']).mean()
-df = df.reset_index()
-df.pop('iter_shuffle_split')
-demeaned_scores_atlas = df.groupby(['classifier', 'measure',
-                                    'dataset'])['scores'].transform(demean)
+#df = df.reset_index()
+#df.pop('iter_shuffle_split')
+
+print(data)
+print(df)
+
 demeaned_scores_measure = df.groupby(['atlas', 'classifier',
                                       'dataset'])['scores'].transform(demean)
+
+demeaned_fd_mean_measure = df.groupby(['atlas', 'classifier',
+                                      'dataset'])['cor_fd_mean'].transform(demean)
+
+demeaned_fd_mean_classifier = df.groupby(['atlas', 'measure',
+                                      'dataset'])['cor_fd_mean'].transform(demean)
+
 demeaned_scores_classifier = df.groupby(['atlas', 'measure',
                                          'dataset'])['scores'].transform(demean)
-df['demeaned_scores_atlas'] = demeaned_scores_atlas
+df['demeaned_fd_mean_measure'] = demeaned_fd_mean_measure
+df['demeaned_fd_mean_classifier'] = demeaned_fd_mean_measure
 df['demeaned_scores_measure'] = demeaned_scores_measure
 df['demeaned_scores_classifier'] = demeaned_scores_classifier
 
@@ -232,7 +242,7 @@ df = df.replace(to_replace={'atlas': new_names_atlas(),
                             'classifier': new_names_classifier()})
 # change the name of the dataset to upper
 df['dataset'] = df['dataset'].str.upper()
-df = df[df['classifier'] != 'lasso']
+#df = df[df['classifier'] != 'lasso']
 ###############################################################################
 # Combine into one dataframe
 
@@ -253,16 +263,25 @@ dummy2 = pd.DataFrame({"method": ["dummy2", 'dummy2', 'dummy2',
 
 new_df_m = pd.concat([new_df_m, dummy2])
 
-new_df_a = df[['atlas', 'dataset', 'dimensionality', 'demeaned_scores_atlas']]
-new_df_a = new_df_a.rename(index=str,
-                           columns={'atlas': 'method',
-                                    'demeaned_scores_atlas': 'demeaned_scores'})
-dummy1 = pd.DataFrame({"method": ["dummy1", 'dummy1', 'dummy1',
-                                  'dummy1', 'dummy1', 'dummy1'],
-                       "dataset": ['COBRE', 'ADNI', 'ADNIDOD',
-                                   'ACPI', 'ABIDE', 'HCP']})
-new_df_a = pd.concat([new_df_a, dummy1])
-df = pd.concat([new_df_a, new_df_m, new_df_c])
+new_df_c_fd = df[['classifier', 'dataset', 'dimensionality',
+               'demeaned_fd_mean_classifier']]
+new_df_c_fd = new_df_c_fd.rename(index=str,
+                           columns={'classifier': 'method',
+                                    'demeaned_fd_mean_classifier': 'demeaned_fd_mean'})
+
+new_df_m_fd = df[['measure', 'dataset', 'dimensionality', 'demeaned_fd_mean_measure']]
+new_df_m_fd = new_df_m_fd.rename(index=str,
+                           columns={'measure': 'method',
+                                    'demeaned_fd_mean_measure': 'demeaned_fd_mean'})
+dummy2 = pd.DataFrame({"method": ["dummy2", 'dummy2', 'dummy2',
+                                  'dummy2', 'dummy2', 'dummy2'],
+                       "dataset": ['COBRE', 'ADNI', 'ADNIDOD', 'ACPI',
+                                   'ABIDE', 'HCP']})
+
+new_df_m_fd = pd.concat([new_df_m_fd, dummy2])
+
+
+df = pd.concat([new_df_m_fd, new_df_c_fd])
 dic = {'AAL \n (116 regions)': 1,
        'Harvard Oxford \n (118 regions)': 2,
        'BASC \n (122 networks)': 4,
@@ -289,10 +308,10 @@ df.sort_values(by=['rank'], inplace=True)
 ###############################################################################
 # Plotting goes here
 hue = 'dataset'
-x = 'demeaned_scores'
+x = 'demeaned_fd_mean'
 y = 'method'
 
-fig, axes = plt.subplots(figsize=(5.5, 11.4))
+fig, axes = plt.subplots(figsize=(4, 8))
 sns.set(color_codes=True)
 sns.set_style("whitegrid", {'axes.edgecolor': '.6', 'grid.color': '.8'})
 sns.set_palette('dark')
