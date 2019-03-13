@@ -14,6 +14,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import cross_val_score
 
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV, Lasso, LassoCV, RidgeClassifier, ElasticNet, ElasticNetCV
+from sklearn.feature_selection import SelectPercentile, f_classif
 import random
 
 # prepare dictionary for saving results
@@ -46,7 +47,7 @@ G = int(np.floor(N/2)) # group size, first G subjects will be in Class 0, remain
 classes = np.array([0] * G + [1] * (N-G))
 
 P_sparse = int(np.floor(P*.01)) # number of ground truth features
-P_nonsparse = int(np.floor(P*0.3))  # number of ground truth features
+P_nonsparse = int(np.floor(P*0.5))  # number of ground truth features
 print(P_sparse)
 print(P_nonsparse)
 
@@ -117,8 +118,15 @@ logregression_l1 = LogisticRegression(penalty='l1', dual=False, random_state=0)
 # Logistic Regression 'l2'
 logregression_l2 = LogisticRegression(penalty='l2', dual=False, random_state=0)
 
+feature_selection = SelectPercentile(f_classif, percentile=5)
+
+# ANOVA + logit_l2
+anova_logregression_l2 = Pipeline([('anova', feature_selection), ('svc', logregression_l2)])
+
 my_classifiers = { 'logistic_l1': logregression_l1,
-                   'logistic_l2': logregression_l2}
+                   'logistic_l2': logregression_l2,
+                   'anova_logistic_l2': anova_logregression_l2
+                   }
 
 # for sparse:
 for est_key in my_classifiers.keys():
