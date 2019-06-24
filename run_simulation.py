@@ -54,7 +54,7 @@ print(P_nonsparse)
 W=0.05 # general weight to adjust SNR
 # adjust weights to be a "bit more fair" when comparing sparse with nonsparse
 W_sparse = W*np.sqrt((P_nonsparse/P_sparse))
-W_nonsparse = W#/P_nonsparse #
+W_nonsparse = W
 
 print(W_sparse )
 print(W_nonsparse )

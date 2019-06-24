@@ -143,13 +143,28 @@ from my_estimators import sklearn_classifiers
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import cross_val_score
 
-cv = StratifiedShuffleSplit(n_splits=100, test_size=0.25,
+cv = StratifiedShuffleSplit(n_splits=100, test_size=0.5,
                             random_state=0)
 
 for atlas in atlases:
     print("Running predictions: with atlas: {0}".format(atlas))
     # tspisak
+
     timeseries, diagnosis, IDs_subject, mean_fd, num_fd, perc_fd = _get_paths(phenotypic, atlas, timeseries_dir)
+
+
+    _, classes = np.unique(diagnosis, return_inverse=True)
+    #print(classes)
+    #print(mean_fd)
+    print(roc_auc_score(classes, [i * -1.0 for i in mean_fd]))
+
+    out=pd.DataFrame({
+        "diagnosis" : classes,
+        "mean_fd" : mean_fd
+        }
+    )
+
+    out.to_csv("pheno_abide.csv")
 
     _, classes = np.unique(diagnosis, return_inverse=True)
     iter_for_prediction = cv.split(timeseries, classes)
@@ -275,7 +290,7 @@ for atlas in atlases:
         os.makedirs(this_atlas_dir)
     res.to_csv(join(this_atlas_dir, 'scores_nopipe_noreg.csv'))
 all_results = pd.DataFrame(results)
-all_results.to_csv('predictions_on_abide.csv')
+all_results.to_csv('predictions_on_abide-test0.5.csv')
 
 #tspisak
 print( all_results[['classifier', 'measure', 'scores']].groupby(['measure', 'classifier']).mean() )
